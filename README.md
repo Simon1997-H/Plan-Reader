@@ -8,10 +8,14 @@ Open `index.html` in a browser.
 - Render PDF pages in the browser.
 - Set scale by either drawing a grid/dimension arrow between two known points or entering a printed ratio such as `1:100` or `1/100`.
 - Mark concrete works using rectangle, polygon, or wall-line tools.
+- Use the curved/messy freehand markup tool for irregular geometry without clean edges.
+- Override the measured quantity basis to use auto geometry, marked area, marked length, or a manual quantity.
+- Insert common tender notes from a quick note selector to save typing.
 - Classify each markup as slab, isolated footing, pad footing, wall, column/round, or beam.
 - Calculate measured area, length, concrete volume, formwork area, waste allowance, and totals.
 - Estimate reinforcement weight and steel price for each element.
 - Choose one-way or two-way reinforcement for manual/minimum bar assumptions.
+- Optionally apply editable AS 3600 tender-stage minimum reinforcement allowances when no reinforcement is shown.
 - Add dowels with bar diameter, length, embedment depth, spacing c/c, epoxy brand, and epoxy allowance.
 - Include saw-cut length/rate for infill slab works and add saw-cut worker-days into manpower.
 - Add minimum tools and equipment allowances including tie wire, small tools, and equipment wear/damage.
@@ -25,6 +29,9 @@ Open `index.html` in a browser.
 
 The app is set up with editable defaults:
 
+- Australian concrete design basis: AS 3600 Concrete structures. Engineers Australia is a professional body; project design compliance must still be checked and certified by the structural engineer.
+- The optional Australian tender minimum only applies when reinforcement is not provided by the drawing schedule or manual input.
+- Default tender minimum reinforcement ratios are editable by element: slab/footing 0.15%, wall 0.25%, beam 0.25%, and column 1.00% Asteel/Aconcrete.
 - Minimum slab assumption: N12 bars at 200 mm spacing, 1 layer.
 - Non-slab fallback: 80 kg/m3.
 - Common mesh weights are included for SL62, SL72, SL82, SL92, and SL102.
@@ -51,6 +58,8 @@ The quotation section calculates concrete, formwork, reinforcement, subtotal, sa
 ## Important limitation
 
 This is an assisted intelligent plan reader, not a paid AI plan recognition service. It can extract concrete-related text from selectable PDF text, but scanned/image-only drawings need manual markup. Full automatic concrete detection from scanned construction plans requires an AI/OCR backend.
+
+The Australian minimum reinforcement feature is a tender-stage estimating allowance only. It is not a substitute for AS 3600 structural design, fire/durability checks, exposure classification, crack control, detailing, lap/splice rules, cover, load combinations, or engineer certification.
 
 ## Internet requirement
 

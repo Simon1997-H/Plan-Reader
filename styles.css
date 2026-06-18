@@ -273,6 +273,16 @@ textarea { min-height: 86px; resize: vertical; }
   margin: 0;
 }
 
+.standard-note {
+  border-left: 4px solid var(--blue);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: #eef4fb;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .panel-heading {
   display: flex;
   align-items: center;
@@ -376,7 +386,7 @@ th { color: var(--muted); font-size: 0.84rem; }
   .app-shell { display: block; }
   .sidebar { position: static; height: auto; }
   .reader-grid { grid-template-columns: 1fr; }
-  .tool-grid { grid-template-columns: repeat(3, 1fr); }
+  .tool-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
 @media (max-width: 650px) {

@@ -18,6 +18,7 @@ const state = {
   start: null,
   preview: null,
   polyPoints: [],
+  freehandPoints: [],
   selectedShape: null,
   textLines: [],
   scheduleRules: {},
@@ -53,6 +54,7 @@ function bindEvents() {
   document.getElementById("clearBtn").addEventListener("click", clearAll);
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
   document.getElementById("printQuoteBtn").addEventListener("click", () => window.print());
+  document.getElementById("noteTemplate").addEventListener("change", insertNoteTemplate);
   ["marketSteelRate", "marketConcreteRate", "marketFormworkRate", "profitMargin"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
       form.steelRate.value = document.getElementById("marketSteelRate").value;
@@ -167,27 +169,51 @@ function pointerDown(event) {
 
   state.drawing = true;
   state.start = point;
+  state.freehandPoints = state.activeTool === "freehand" ? [point] : [];
   state.preview = null;
 }
 
 function pointerMove(event) {
   if (!state.drawing || !state.start) return;
-  state.preview = canvasPoint(event);
+  const point = canvasPoint(event);
+  if (state.activeTool === "freehand") {
+    const last = state.freehandPoints[state.freehandPoints.length - 1];
+    if (!last || distance(last, point) > 4) state.freehandPoints.push(point);
+  }
+  state.preview = point;
   drawMarkup();
 }
 
 function pointerUp(event) {
   if (!state.drawing || !state.start) return;
   const end = canvasPoint(event);
-  const shape = state.activeTool === "line"
-    ? { kind: "line", page: state.page, points: [state.start, end] }
-    : { kind: "rect", page: state.page, points: [state.start, end] };
+  const shape = buildShapeFromPointer(end);
   state.shapes.push(shape);
   selectShape(shape);
   state.drawing = false;
   state.start = null;
   state.preview = null;
+  state.freehandPoints = [];
   drawMarkup();
+}
+
+function buildShapeFromPointer(end) {
+  if (state.activeTool === "line") return { kind: "line", page: state.page, points: [state.start, end] };
+  if (state.activeTool === "freehand") {
+    const points = simplifyFreehand([...state.freehandPoints, end]);
+    return { kind: "freehand", page: state.page, points };
+  }
+  return { kind: "rect", page: state.page, points: [state.start, end] };
+}
+
+function insertNoteTemplate(event) {
+  const text = event.target.value;
+  if (!text) return;
+  const notes = form.notes;
+  const current = notes.value.trim();
+  notes.value = current ? `${current}\n${text}` : text;
+  event.target.value = "";
+  showMissingParameters();
 }
 
 function touchAsMouse(event) {
@@ -280,6 +306,10 @@ function selectShape(shape) {
   state.selectedShape = shape;
   form.name.value = `Page ${shape.page} concrete ${state.shapes.length}`;
   form.type.value = shape.kind === "line" ? "wall" : "slab";
+  if (shape.kind === "freehand") {
+    form.geometryCondition.value = "messy";
+    form.measurementBasis.value = "area";
+  }
   showMissingParameters();
 }
 
@@ -307,7 +337,7 @@ function saveSelectedElement(event) {
 }
 
 function calculateShape(shape, values) {
-  const measured = measureShape(shape);
+  const measured = applyMeasurementBasis(measureShape(shape), values);
   const type = values.type;
   const missing = [];
   const thicknessM = values.thicknessMm / 1000;
@@ -371,7 +401,37 @@ function measureShape(shape) {
     return { area: width * height, perimeter: 2 * (width + height), length: Math.max(width, height) };
   }
   const scaled = shape.points.map((point) => ({ x: point.x * state.scaleMPerPx, y: point.y * state.scaleMPerPx }));
+  if (shape.kind === "freehand") {
+    return { area: polygonArea(scaled), perimeter: polygonPerimeter(scaled), length: polylineLength(scaled) };
+  }
   return { area: polygonArea(scaled), perimeter: polygonPerimeter(scaled), length: polygonPerimeter(scaled) };
+}
+
+function applyMeasurementBasis(measured, values) {
+  const result = { ...measured, basis: values.measurementBasis, manualUnit: values.manualUnit, manualQuantity: values.manualQuantity };
+  if (values.measurementBasis === "manual" && values.manualQuantity) {
+    if (values.manualUnit === "m2") {
+      result.area = values.manualQuantity;
+      result.length = 0;
+      result.perimeter = 0;
+    } else if (values.manualUnit === "lm") {
+      result.area = 0;
+      result.length = values.manualQuantity;
+      result.perimeter = values.manualQuantity;
+    } else {
+      result.count = values.manualQuantity;
+    }
+    return result;
+  }
+  if (values.measurementBasis === "length") {
+    result.area = 0;
+    result.length = measured.length || measured.perimeter || 0;
+    result.perimeter = result.length;
+  }
+  if (values.measurementBasis === "area") {
+    result.area = measured.area || values.manualQuantity || 0;
+  }
+  return result;
 }
 
 function calculateReinforcement(type, values, measured, area, volume, wasteFactor) {
@@ -379,14 +439,17 @@ function calculateReinforcement(type, values, measured, area, volume, wasteFacto
   const steelRate = values.steelRate || 0;
   let weightKg = 0;
   let description = "Minimum assumption";
+  let basis = "fallback";
 
   if (rule && values.reoSource !== "manual") {
     if (rule.meshKgPerM2) {
       weightKg = area * rule.meshKgPerM2;
       description = `${values.tag}: ${rule.description}`;
+      basis = "schedule";
     } else if (rule.barDiameter && rule.spacing) {
       weightKg = areaRebarWeight(area, rule.barDiameter, rule.spacing, rule.layers || values.reoLayers || 1, values.reoDirection);
       description = `${values.tag}: ${rule.description}`;
+      basis = "schedule";
     }
   }
 
@@ -394,13 +457,24 @@ function calculateReinforcement(type, values, measured, area, volume, wasteFacto
     if (values.meshKgPerM2) {
       weightKg = area * values.meshKgPerM2;
       description = `Manual mesh ${values.meshKgPerM2} kg/m2`;
+      basis = "manual";
     } else if (values.barDiameter && values.barSpacing) {
       weightKg = areaRebarWeight(area, values.barDiameter, values.barSpacing, values.reoLayers || 1, values.reoDirection);
       description = `Manual ${reoDirectionLabel(values.reoDirection)} N${values.barDiameter} @ ${values.barSpacing} mm, ${values.reoLayers || 1} layer(s)`;
+      basis = "manual";
     }
   }
 
-  if (!weightKg) {
+  if (!weightKg && values.ausMinReoMode === "enabled") {
+    const minimum = australianTenderMinimumReo(type, values, volume);
+    if (minimum.weightKg) {
+      weightKg = minimum.weightKg;
+      description = minimum.description;
+      basis = "australian-tender-minimum";
+    }
+  }
+
+  if (!weightKg && values.ausMinReoMode !== "disabled") {
     if (type === "slab" && values.barDiameter && values.barSpacing) {
       weightKg = areaRebarWeight(area, values.barDiameter, values.barSpacing, values.reoLayers || 1, values.reoDirection);
       description = `Minimum slab assumption: ${reoDirectionLabel(values.reoDirection)} N${values.barDiameter} @ ${values.barSpacing} mm, ${values.reoLayers || 1} layer(s)`;
@@ -415,7 +489,26 @@ function calculateReinforcement(type, values, measured, area, volume, wasteFacto
     weightKg,
     cost: weightKg * steelRate,
     description,
+    basis,
     matchedSchedule: Boolean(rule)
+  };
+}
+
+function australianTenderMinimumReo(type, values, volume) {
+  const ratioPercent = {
+    slab: values.minReoRatioSlab,
+    isolatedFooting: values.minReoRatioSlab,
+    padFooting: values.minReoRatioSlab,
+    wall: values.minReoRatioWall,
+    beam: values.minReoRatioBeam,
+    column: values.minReoRatioColumn
+  }[type] || 0;
+  if (!ratioPercent || !volume) return { weightKg: 0, description: "" };
+  const steelDensityKgPerM3 = 7850;
+  const weightKg = volume * (ratioPercent / 100) * steelDensityKgPerM3;
+  return {
+    weightKg,
+    description: `AS 3600 tender minimum allowance: ${ratioPercent}% Asteel/Aconcrete for ${labelType(type)} because reinforcement is not shown`
   };
 }
 
@@ -700,7 +793,7 @@ function renderBoq() {
       return `
         <tr>
           <td>${boq.page}</td>
-          <td><b>${escapeHtml(boq.name)}</b><div>${escapeHtml(boq.notes)}</div></td>
+          <td><b>${escapeHtml(boq.name)}</b><div>${geometryConditionLabel(boq.geometryCondition)}</div><div>${escapeHtml(boq.notes)}</div></td>
           <td>${labelType(boq.type)}</td>
           <td>${measuredText(boq.measured)}</td>
           <td>${fmt(boq.area)} m²</td>
@@ -781,7 +874,10 @@ function drawMarkup() {
   state.shapes.filter((shape) => shape.page === state.page).forEach((shape) => drawShape(shape, shape.saved ? "#146c64" : "#c57a1d"));
   if (state.polyPoints.length) drawPolyline(state.polyPoints, "#245b9d", false);
   if (state.scalePoints.length) drawScaleArrow(state.scalePoints, "#b8443f");
-  if (state.drawing && state.start && state.preview) {
+  if (state.drawing && state.activeTool === "freehand" && state.freehandPoints.length) {
+    drawPolyline(state.freehandPoints, "#245b9d", false);
+  }
+  if (state.drawing && state.start && state.preview && state.activeTool !== "freehand") {
     drawShape({ kind: state.activeTool === "line" ? "line" : "rect", points: [state.start, state.preview] }, "#245b9d");
   }
 }
@@ -854,11 +950,20 @@ function formValues() {
     thicknessMm: numberValue(form.thicknessMm.value),
     height: numberValue(form.height.value),
     width: numberValue(form.width.value),
+    measurementBasis: form.measurementBasis.value,
+    geometryCondition: form.geometryCondition.value,
+    manualQuantity: numberValue(form.manualQuantity.value),
+    manualUnit: form.manualUnit.value,
     waste: numberValue(form.waste.value),
     tag: form.tag.value.trim().toUpperCase(),
     notes: form.notes.value.trim(),
     reoSource: form.reoSource.value,
     reoDirection: form.reoDirection.value,
+    ausMinReoMode: form.ausMinReoMode.value,
+    minReoRatioSlab: numberValue(form.minReoRatioSlab.value),
+    minReoRatioWall: numberValue(form.minReoRatioWall.value),
+    minReoRatioBeam: numberValue(form.minReoRatioBeam.value),
+    minReoRatioColumn: numberValue(form.minReoRatioColumn.value),
     barDiameter: numberValue(form.barDiameter.value),
     barSpacing: numberValue(form.barSpacing.value),
     reoLayers: numberValue(form.reoLayers.value),
@@ -920,6 +1025,10 @@ function exportCsv() {
       b.name,
       b.tag,
       labelType(b.type),
+      b.geometryCondition,
+      b.measurementBasis,
+      b.manualQuantity,
+      b.manualUnit,
       measuredText(b.measured),
       fmt(b.area),
       fmt(b.volumeWithWaste),
@@ -927,7 +1036,13 @@ function exportCsv() {
       fmt(b.reinforcement.weightKg),
       money(b.reinforcement.weightKg * settings.steelRate),
       b.reinforcement.description,
+      b.reinforcement.basis,
+      b.ausMinReoMode,
       b.reoDirection,
+      b.minReoRatioSlab,
+      b.minReoRatioWall,
+      b.minReoRatioBeam,
+      b.minReoRatioColumn,
       b.dowels.count,
       fmt(b.dowels.barWeightKg),
       b.dowels.description,
@@ -946,7 +1061,7 @@ function exportCsv() {
       b.notes
     ];
   });
-  const csv = [["page", "name", "tag", "type", "measured", "area_m2", "volume_m3", "formwork_m2", "reo_kg", "steel_cost", "reo_basis", "reo_direction", "dowel_count", "dowel_steel_kg", "dowel_basis", "dowel_epoxy_steel_cost", "saw_cut_lm", "saw_cut_basis", "saw_cut_cost", "tie_wire_kg", "tie_wire_cost", "small_tools_cost", "equipment_damage_cost", "tools_total_cost", "min_crew", "worker_days", "duration_days", "notes"], ...rows]
+  const csv = [["page", "name", "tag", "type", "geometry_condition", "measurement_basis", "manual_quantity", "manual_unit", "measured", "area_m2", "volume_m3", "formwork_m2", "reo_kg", "steel_cost", "reo_basis", "reo_calc_mode", "aus_min_reo_mode", "reo_direction", "min_reo_ratio_slab_percent", "min_reo_ratio_wall_percent", "min_reo_ratio_beam_percent", "min_reo_ratio_column_percent", "dowel_count", "dowel_steel_kg", "dowel_basis", "dowel_epoxy_steel_cost", "saw_cut_lm", "saw_cut_basis", "saw_cut_cost", "tie_wire_kg", "tie_wire_cost", "small_tools_cost", "equipment_damage_cost", "tools_total_cost", "min_crew", "worker_days", "duration_days", "notes"], ...rows]
     .map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(","))
     .join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
@@ -971,6 +1086,18 @@ function polygonPerimeter(points) {
   return points.reduce((total, point, index) => total + distance(point, points[(index + 1) % points.length]), 0);
 }
 
+function polylineLength(points) {
+  return points.slice(1).reduce((total, point, index) => total + distance(points[index], point), 0);
+}
+
+function simplifyFreehand(points) {
+  if (points.length <= 2) return points;
+  return points.filter((point, index) => {
+    if (index === 0 || index === points.length - 1) return true;
+    return distance(points[index - 1], point) >= 5;
+  });
+}
+
 function distance(a, b) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
@@ -986,9 +1113,20 @@ function labelType(type) {
   }[type] || type;
 }
 
+function geometryConditionLabel(condition) {
+  return {
+    regular: "Geometry: regular",
+    curved: "Geometry: curved edge",
+    messy: "Geometry: messy / irregular",
+    assumed: "Geometry: assumed from note"
+  }[condition] || "Geometry: regular";
+}
+
 function measuredText(measured) {
-  if (measured.area) return `${fmt(measured.area)} m², ${fmt(measured.perimeter)} lm`;
-  return `${fmt(measured.length)} lm`;
+  const basis = measured.basis && measured.basis !== "auto" ? ` (${measured.basis})` : "";
+  if (measured.count) return `${fmt(measured.count)} count${basis}`;
+  if (measured.area) return `${fmt(measured.area)} m², ${fmt(measured.perimeter)} lm${basis}`;
+  return `${fmt(measured.length)} lm${basis}`;
 }
 
 function numberValue(value) {

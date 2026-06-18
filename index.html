@@ -34,6 +34,14 @@
           </div>
 
           <div id="dimensionScaleFields" class="scale-fields">
+            <div class="form-row sidebar-row">
+              <label>First grid name
+                <input id="firstGridName" inputmode="text" placeholder="Example: Grid A">
+              </label>
+              <label>Second grid name
+                <input id="secondGridName" inputmode="text" placeholder="Example: Grid B">
+              </label>
+            </div>
             <label>Distance between grid lines
               <input id="knownDistance" type="number" inputmode="decimal" min="0" step="0.001" placeholder="Example: 10">
             </label>
@@ -68,7 +76,6 @@
             <button class="tool active" data-tool="rect" type="button">Rectangle</button>
             <button class="tool" data-tool="poly" type="button">Polygon</button>
             <button class="tool" data-tool="line" type="button">Wall Line</button>
-            <button class="tool" data-tool="freehand" type="button">Curved / Messy</button>
           </div>
           <button id="finishPolyBtn" class="ghost-button" type="button">Finish Polygon</button>
           <button id="undoBtn" class="ghost-button" type="button">Undo Point</button>
@@ -147,36 +154,6 @@
                 <input name="tag" placeholder="Example: S1, F2, W3">
               </label>
               <div class="form-row">
-                <label>Measured quantity to use
-                  <select name="measurementBasis">
-                    <option value="auto">Auto from geometry</option>
-                    <option value="area">Use marked area m²</option>
-                    <option value="length">Use marked length lm</option>
-                    <option value="manual">Manual quantity</option>
-                  </select>
-                </label>
-                <label>Geometry condition
-                  <select name="geometryCondition">
-                    <option value="regular">Regular / straight edges</option>
-                    <option value="curved">Curved edge</option>
-                    <option value="messy">Messy / irregular edge</option>
-                    <option value="assumed">Assumed from tender note</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-row">
-                <label>Manual quantity
-                  <input name="manualQuantity" type="number" inputmode="decimal" min="0" step="0.001" placeholder="If overriding geometry">
-                </label>
-                <label>Manual unit
-                  <select name="manualUnit">
-                    <option value="m2">m²</option>
-                    <option value="lm">lm</option>
-                    <option value="count">count</option>
-                  </select>
-                </label>
-              </div>
-              <div class="form-row">
                 <label>Thickness mm
                   <input name="thicknessMm" type="number" inputmode="decimal" min="0" step="1" placeholder="Required for slab/wall">
                 </label>
@@ -192,17 +169,6 @@
                   <input name="waste" type="number" inputmode="decimal" min="0" step="0.1" value="5">
                 </label>
               </div>
-              <label>Quick note text
-                <select id="noteTemplate">
-                  <option value="">Select text to insert into notes</option>
-                  <option value="Tender-stage allowance, verify against IFC drawings.">Tender-stage allowance, verify against IFC drawings.</option>
-                  <option value="Dimension assumed from scale; confirm on site before construction.">Dimension assumed from scale; confirm on site before construction.</option>
-                  <option value="Irregular/curved geometry measured from marked area.">Irregular/curved geometry measured from marked area.</option>
-                  <option value="Saw cut and dowel allowance included where marked.">Saw cut and dowel allowance included where marked.</option>
-                  <option value="Reinforcement not shown; optional AS 3600 tender minimum allowance used.">Reinforcement not shown; optional AS 3600 tender minimum allowance used.</option>
-                  <option value="Excludes engineering certification and final reinforcement design.">Excludes engineering certification and final reinforcement design.</option>
-                </select>
-              </label>
               <label>Notes
                 <textarea name="notes" placeholder="Plan note, gridline, assumption"></textarea>
               </label>
@@ -220,12 +186,6 @@
                   <select name="reoDirection">
                     <option value="twoWay">Two ways</option>
                     <option value="oneWay">One way only</option>
-                  </select>
-                </label>
-                <label>Australian tender minimum when reo not shown
-                  <select name="ausMinReoMode">
-                    <option value="enabled">Use editable AS 3600 tender allowances</option>
-                    <option value="disabled">Do not add minimum reo allowance</option>
                   </select>
                 </label>
                 <div class="form-row">
@@ -250,25 +210,6 @@
                   </label>
                   <label>Steel price $/kg
                     <input name="steelRate" type="number" inputmode="decimal" min="0" step="0.01" value="2.00">
-                  </label>
-                </div>
-                <div class="standard-note">
-                  AS 3600: Concrete structures is used as the Australian design basis. These are tender-stage estimating allowances only and must be confirmed by the project structural engineer.
-                </div>
-                <div class="form-row">
-                  <label>Slab / footing min reo %
-                    <input name="minReoRatioSlab" type="number" inputmode="decimal" min="0" step="0.01" value="0.15">
-                  </label>
-                  <label>Wall min reo %
-                    <input name="minReoRatioWall" type="number" inputmode="decimal" min="0" step="0.01" value="0.25">
-                  </label>
-                </div>
-                <div class="form-row">
-                  <label>Beam min reo %
-                    <input name="minReoRatioBeam" type="number" inputmode="decimal" min="0" step="0.01" value="0.25">
-                  </label>
-                  <label>Column min reo %
-                    <input name="minReoRatioColumn" type="number" inputmode="decimal" min="0" step="0.01" value="1.00">
                   </label>
                 </div>
               </section>

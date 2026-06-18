@@ -337,7 +337,10 @@ function calculateShape(shape, values) {
 
   const wasteFactor = 1 + values.waste / 100;
   const reinforcement = calculateReinforcement(type, values, measured, area, volume, wasteFactor);
-  const manpower = calculateManpower(volume * wasteFactor, reinforcement.weightKg, values);
+  const dowels = calculateDowels(values, measured, reinforcement.weightKg);
+  const sawCut = calculateSawCut(values, measured);
+  const tools = calculateTools(values, reinforcement.weightKg);
+  const manpower = calculateManpower(volume * wasteFactor, reinforcement.weightKg, sawCut.workerDays, values);
   return {
     ...values,
     page: shape.page,
@@ -348,6 +351,9 @@ function calculateShape(shape, values) {
     volumeWithWaste: volume * wasteFactor,
     formworkWithWaste: formwork * wasteFactor,
     reinforcement,
+    dowels,
+    sawCut,
+    tools,
     manpower,
     missing
   };
@@ -379,7 +385,7 @@ function calculateReinforcement(type, values, measured, area, volume, wasteFacto
       weightKg = area * rule.meshKgPerM2;
       description = `${values.tag}: ${rule.description}`;
     } else if (rule.barDiameter && rule.spacing) {
-      weightKg = areaRebarWeight(area, rule.barDiameter, rule.spacing, rule.layers || values.reoLayers || 1);
+      weightKg = areaRebarWeight(area, rule.barDiameter, rule.spacing, rule.layers || values.reoLayers || 1, values.reoDirection);
       description = `${values.tag}: ${rule.description}`;
     }
   }
@@ -389,15 +395,15 @@ function calculateReinforcement(type, values, measured, area, volume, wasteFacto
       weightKg = area * values.meshKgPerM2;
       description = `Manual mesh ${values.meshKgPerM2} kg/m2`;
     } else if (values.barDiameter && values.barSpacing) {
-      weightKg = areaRebarWeight(area, values.barDiameter, values.barSpacing, values.reoLayers || 1);
-      description = `Manual N${values.barDiameter} @ ${values.barSpacing} mm, ${values.reoLayers || 1} layer(s)`;
+      weightKg = areaRebarWeight(area, values.barDiameter, values.barSpacing, values.reoLayers || 1, values.reoDirection);
+      description = `Manual ${reoDirectionLabel(values.reoDirection)} N${values.barDiameter} @ ${values.barSpacing} mm, ${values.reoLayers || 1} layer(s)`;
     }
   }
 
   if (!weightKg) {
     if (type === "slab" && values.barDiameter && values.barSpacing) {
-      weightKg = areaRebarWeight(area, values.barDiameter, values.barSpacing, values.reoLayers || 1);
-      description = `Minimum slab assumption: N${values.barDiameter} @ ${values.barSpacing} mm, ${values.reoLayers || 1} layer(s)`;
+      weightKg = areaRebarWeight(area, values.barDiameter, values.barSpacing, values.reoLayers || 1, values.reoDirection);
+      description = `Minimum slab assumption: ${reoDirectionLabel(values.reoDirection)} N${values.barDiameter} @ ${values.barSpacing} mm, ${values.reoLayers || 1} layer(s)`;
     } else {
       weightKg = volume * (values.reoKgPerM3 || 80);
       description = `Minimum allowance: ${values.reoKgPerM3 || 80} kg/m3`;
@@ -413,10 +419,62 @@ function calculateReinforcement(type, values, measured, area, volume, wasteFacto
   };
 }
 
-function calculateManpower(volumeWithWaste, reoKg, values) {
+function calculateDowels(values, measured, reoKg) {
+  if (values.includeDowels !== "yes") {
+    return { count: 0, barWeightKg: 0, epoxyCost: 0, steelCost: 0, totalCost: 0, description: "Not included" };
+  }
+  const spacingM = values.dowelSpacingMm / 1000;
+  const count = spacingM ? Math.ceil((measured.perimeter || measured.length || 0) / spacingM) : 0;
+  const lengthM = values.dowelLengthMm / 1000;
+  const barWeightKg = count * lengthM * barKgPerM(values.dowelDiameter);
+  const epoxyCost = count * values.epoxyRatePerDowel;
+  const steelCost = barWeightKg * values.steelRate;
+  return {
+    count,
+    barWeightKg,
+    epoxyCost,
+    steelCost,
+    totalCost: epoxyCost + steelCost,
+    description: `${count} N${values.dowelDiameter} dowels, ${values.dowelLengthMm} mm long, ${values.dowelEmbedmentMm} mm embedment, ${values.dowelSpacingMm} mm c/c, ${values.epoxyBrand}`
+  };
+}
+
+function calculateSawCut(values, measured) {
+  if (values.sawCutRequired !== "yes") {
+    return { lengthLm: 0, cost: 0, workerDays: 0, durationDays: 0, description: "Not required" };
+  }
+  const lengthLm = values.sawCutLm || measured.perimeter || measured.length || 0;
+  const workerDays = values.sawCutProdLmPerDay ? lengthLm / values.sawCutProdLmPerDay : 0;
+  const crew = Math.max(1, Math.ceil(values.sawCutCrew || 1));
+  const durationDays = workerDays / crew;
+  return {
+    lengthLm,
+    cost: lengthLm * values.sawCutRate,
+    workerDays,
+    durationDays,
+    description: `${fmt(lengthLm)} lm @ ${money(values.sawCutRate)}/lm, ${fmt(workerDays)} worker-days, ${crew} saw-cut crew`
+  };
+}
+
+function calculateTools(values, reoKg) {
+  const tieWireKg = values.tieWireKg || reoKg * 0.015;
+  const tieWireCost = tieWireKg * values.tieWireRate;
+  const smallToolsCost = values.smallToolsAllowance;
+  const equipmentDamageCost = values.equipmentDamageAllowance;
+  return {
+    tieWireKg,
+    tieWireCost,
+    smallToolsCost,
+    equipmentDamageCost,
+    totalCost: tieWireCost + smallToolsCost + equipmentDamageCost,
+    description: `${fmt(tieWireKg)} kg tie wire, ${money(smallToolsCost)} tools, ${money(equipmentDamageCost)} equipment wear`
+  };
+}
+
+function calculateManpower(volumeWithWaste, reoKg, sawCutWorkerDays, values) {
   const concreteWorkerDays = values.prodM3PerWorkerDay ? volumeWithWaste / values.prodM3PerWorkerDay : 0;
   const reoWorkerDays = values.prodKgPerWorkerDay ? reoKg / values.prodKgPerWorkerDay : 0;
-  const workerDays = Math.max(concreteWorkerDays + reoWorkerDays, 0.25);
+  const workerDays = Math.max(concreteWorkerDays + reoWorkerDays + sawCutWorkerDays, 0.25);
   const crew = Math.max(1, Math.ceil(values.minCrew || 1));
   return {
     crew,
@@ -597,14 +655,19 @@ function meshWeight(mesh) {
   }[mesh] || 4.1;
 }
 
-function areaRebarWeight(area, diameterMm, spacingMm, layers) {
+function areaRebarWeight(area, diameterMm, spacingMm, layers, direction = "twoWay") {
   const spacingM = spacingMm / 1000;
   if (!area || !spacingM || !diameterMm) return 0;
-  return area * (2 / spacingM) * barKgPerM(diameterMm) * (layers || 1);
+  const directionFactor = direction === "oneWay" ? 1 : 2;
+  return area * (directionFactor / spacingM) * barKgPerM(diameterMm) * (layers || 1);
 }
 
 function barKgPerM(diameterMm) {
   return (diameterMm * diameterMm) / 162;
+}
+
+function reoDirectionLabel(direction) {
+  return direction === "oneWay" ? "one-way" : "two-way";
 }
 
 function showMissingParameters() {
@@ -629,7 +692,7 @@ function renderBoq() {
   const rows = state.shapes.filter((shape) => shape.saved && shape.boq);
   const tbody = document.getElementById("boqRows");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="11">No concrete elements saved yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14">No concrete elements saved yet.</td></tr>`;
   } else {
     tbody.innerHTML = rows.map((shape, index) => {
       const boq = shape.boq;
@@ -644,6 +707,9 @@ function renderBoq() {
           <td><b>${fmt(boq.volumeWithWaste)} m³</b><div>raw ${fmt(boq.volume)} m³</div></td>
           <td>${fmt(boq.formworkWithWaste)} m²</td>
           <td><b>${fmt(boq.reinforcement.weightKg)} kg</b><div>${escapeHtml(boq.reinforcement.description)}</div><div>${money(currentSteelCost)} steel</div></td>
+          <td><b>${boq.dowels.count} dowels</b><div>${escapeHtml(boq.dowels.description)}</div><div>${money(boq.dowels.totalCost)}</div></td>
+          <td><b>${fmt(boq.sawCut.lengthLm)} lm</b><div>${escapeHtml(boq.sawCut.description)}</div><div>${money(boq.sawCut.cost)}</div></td>
+          <td><b>${money(boq.tools.totalCost)}</b><div>${escapeHtml(boq.tools.description)}</div></td>
           <td><b>${boq.manpower.crew} workers</b><div>${fmt(boq.manpower.workerDays)} worker-days</div><div>${fmt(boq.manpower.durationDays)} days min</div></td>
           <td><span class="status">complete</span></td>
           <td><button class="delete-line" data-index="${index}" type="button">X</button></td>
@@ -666,14 +732,21 @@ function renderTotals(rows) {
   const volume = rows.reduce((total, shape) => total + shape.boq.volumeWithWaste, 0);
   const formwork = rows.reduce((total, shape) => total + shape.boq.formworkWithWaste, 0);
   const reo = rows.reduce((total, shape) => total + shape.boq.reinforcement.weightKg, 0);
+  const dowelCount = rows.reduce((total, shape) => total + shape.boq.dowels.count, 0);
+  const dowelCost = rows.reduce((total, shape) => total + shape.boq.dowels.totalCost, 0);
+  const sawCutLm = rows.reduce((total, shape) => total + shape.boq.sawCut.lengthLm, 0);
+  const sawCutCost = rows.reduce((total, shape) => total + shape.boq.sawCut.cost, 0);
+  const toolsCost = rows.reduce((total, shape) => total + shape.boq.tools.totalCost, 0);
   const settings = quoteSettings();
   const steelCost = reo * settings.steelRate;
   document.getElementById("totalArea").textContent = `${fmt(area)} m²`;
   document.getElementById("totalVolume").textContent = `${fmt(volume)} m³`;
   document.getElementById("totalFormwork").textContent = `${fmt(formwork)} m² FW`;
   document.getElementById("totalReo").textContent = `${fmt(reo)} kg reo`;
+  document.getElementById("totalDowels").textContent = `${dowelCount} dowels`;
+  document.getElementById("totalSawCut").textContent = `${fmt(sawCutLm)} lm saw cut`;
   document.getElementById("totalSteelCost").textContent = `${money(steelCost)} steel`;
-  renderQuotationTotals({ volume, formwork, reo, steelCost, settings });
+  renderQuotationTotals({ volume, formwork, reo, dowelCost, sawCutCost, toolsCost, settings });
 }
 
 function quoteSettings() {
@@ -685,16 +758,19 @@ function quoteSettings() {
   };
 }
 
-function renderQuotationTotals({ volume, formwork, reo, settings }) {
+function renderQuotationTotals({ volume, formwork, reo, dowelCost, sawCutCost, toolsCost, settings }) {
   const concreteCost = volume * settings.concreteRate;
   const formworkCost = formwork * settings.formworkRate;
   const steelCost = reo * settings.steelRate;
-  const subtotal = concreteCost + formworkCost + steelCost;
+  const subtotal = concreteCost + formworkCost + steelCost + dowelCost + sawCutCost + toolsCost;
   const margin = subtotal * (settings.marginPercent / 100);
   const total = subtotal + margin;
   document.getElementById("quoteConcrete").textContent = money(concreteCost);
   document.getElementById("quoteFormwork").textContent = money(formworkCost);
   document.getElementById("quoteSteel").textContent = money(steelCost);
+  document.getElementById("quoteDowels").textContent = money(dowelCost);
+  document.getElementById("quoteSawCut").textContent = money(sawCutCost);
+  document.getElementById("quoteTools").textContent = money(toolsCost);
   document.getElementById("quoteSubtotal").textContent = money(subtotal);
   document.getElementById("quoteMargin").textContent = money(margin);
   document.getElementById("quoteTotal").textContent = money(total);
@@ -782,12 +858,29 @@ function formValues() {
     tag: form.tag.value.trim().toUpperCase(),
     notes: form.notes.value.trim(),
     reoSource: form.reoSource.value,
+    reoDirection: form.reoDirection.value,
     barDiameter: numberValue(form.barDiameter.value),
     barSpacing: numberValue(form.barSpacing.value),
     reoLayers: numberValue(form.reoLayers.value),
     reoKgPerM3: numberValue(form.reoKgPerM3.value),
     meshKgPerM2: numberValue(form.meshKgPerM2.value),
     steelRate: numberValue(form.steelRate.value),
+    includeDowels: form.includeDowels.value,
+    dowelDiameter: numberValue(form.dowelDiameter.value),
+    dowelLengthMm: numberValue(form.dowelLengthMm.value),
+    dowelEmbedmentMm: numberValue(form.dowelEmbedmentMm.value),
+    dowelSpacingMm: numberValue(form.dowelSpacingMm.value),
+    epoxyBrand: form.epoxyBrand.value,
+    epoxyRatePerDowel: numberValue(form.epoxyRatePerDowel.value),
+    sawCutRequired: form.sawCutRequired.value,
+    sawCutLm: numberValue(form.sawCutLm.value),
+    sawCutRate: numberValue(form.sawCutRate.value),
+    sawCutProdLmPerDay: numberValue(form.sawCutProdLmPerDay.value),
+    sawCutCrew: numberValue(form.sawCutCrew.value),
+    tieWireKg: numberValue(form.tieWireKg.value),
+    tieWireRate: numberValue(form.tieWireRate.value),
+    smallToolsAllowance: numberValue(form.smallToolsAllowance.value),
+    equipmentDamageAllowance: numberValue(form.equipmentDamageAllowance.value),
     minCrew: numberValue(form.minCrew.value),
     hoursPerDay: numberValue(form.hoursPerDay.value),
     prodM3PerWorkerDay: numberValue(form.prodM3PerWorkerDay.value),
@@ -834,13 +927,26 @@ function exportCsv() {
       fmt(b.reinforcement.weightKg),
       money(b.reinforcement.weightKg * settings.steelRate),
       b.reinforcement.description,
+      b.reoDirection,
+      b.dowels.count,
+      fmt(b.dowels.barWeightKg),
+      b.dowels.description,
+      money(b.dowels.totalCost),
+      fmt(b.sawCut.lengthLm),
+      b.sawCut.description,
+      money(b.sawCut.cost),
+      fmt(b.tools.tieWireKg),
+      money(b.tools.tieWireCost),
+      money(b.tools.smallToolsCost),
+      money(b.tools.equipmentDamageCost),
+      money(b.tools.totalCost),
       b.manpower.crew,
       fmt(b.manpower.workerDays),
       fmt(b.manpower.durationDays),
       b.notes
     ];
   });
-  const csv = [["page", "name", "tag", "type", "measured", "area_m2", "volume_m3", "formwork_m2", "reo_kg", "steel_cost", "reo_basis", "min_crew", "worker_days", "duration_days", "notes"], ...rows]
+  const csv = [["page", "name", "tag", "type", "measured", "area_m2", "volume_m3", "formwork_m2", "reo_kg", "steel_cost", "reo_basis", "reo_direction", "dowel_count", "dowel_steel_kg", "dowel_basis", "dowel_epoxy_steel_cost", "saw_cut_lm", "saw_cut_basis", "saw_cut_cost", "tie_wire_kg", "tie_wire_cost", "small_tools_cost", "equipment_damage_cost", "tools_total_cost", "min_crew", "worker_days", "duration_days", "notes"], ...rows]
     .map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(","))
     .join("\n");
   const blob = new Blob([csv], { type: "text/csv" });

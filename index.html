@@ -174,6 +174,12 @@
                     <option value="minimum">Minimum assumption only</option>
                   </select>
                 </label>
+                <label>Reinforcement direction
+                  <select name="reoDirection">
+                    <option value="twoWay">Two ways</option>
+                    <option value="oneWay">One way only</option>
+                  </select>
+                </label>
                 <div class="form-row">
                   <label>Bar diameter mm
                     <input name="barDiameter" type="number" inputmode="decimal" min="0" step="1" value="12">
@@ -196,6 +202,93 @@
                   </label>
                   <label>Steel price $/kg
                     <input name="steelRate" type="number" inputmode="decimal" min="0" step="0.01" value="2.00">
+                  </label>
+                </div>
+              </section>
+
+              <section class="sub-panel">
+                <h4>Dowels and Epoxy</h4>
+                <label>Include dowels
+                  <select name="includeDowels">
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </label>
+                <div class="form-row">
+                  <label>Dowel bar diameter mm
+                    <input name="dowelDiameter" type="number" inputmode="decimal" min="0" step="1" value="12">
+                  </label>
+                  <label>Dowel length mm
+                    <input name="dowelLengthMm" type="number" inputmode="decimal" min="0" step="1" value="600">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Embedment depth mm
+                    <input name="dowelEmbedmentMm" type="number" inputmode="decimal" min="0" step="1" value="150">
+                  </label>
+                  <label>Dowel spacing c/c mm
+                    <input name="dowelSpacingMm" type="number" inputmode="decimal" min="1" step="1" value="400">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Epoxy brand
+                    <select name="epoxyBrand">
+                      <option value="Hilti HIT-RE 500">Hilti HIT-RE 500</option>
+                      <option value="Hilti HY 200">Hilti HY 200</option>
+                      <option value="Ramset ChemSet">Ramset ChemSet</option>
+                      <option value="Ramset Epcon">Ramset Epcon</option>
+                      <option value="Fischer FIS">Fischer FIS</option>
+                      <option value="Other">Other / supplier nominated</option>
+                    </select>
+                  </label>
+                  <label>Epoxy allowance $/dowel
+                    <input name="epoxyRatePerDowel" type="number" inputmode="decimal" min="0" step="0.01" value="3.50">
+                  </label>
+                </div>
+              </section>
+
+              <section class="sub-panel">
+                <h4>Saw Cut and Infill</h4>
+                <label>Saw cut required
+                  <select name="sawCutRequired">
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                  </select>
+                </label>
+                <div class="form-row">
+                  <label>Saw cut length lm
+                    <input name="sawCutLm" type="number" inputmode="decimal" min="0" step="0.001" placeholder="Auto perimeter if blank">
+                  </label>
+                  <label>Saw cut rate $/lm
+                    <input name="sawCutRate" type="number" inputmode="decimal" min="0" step="0.01" value="18">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Saw cut productivity lm/worker/day
+                    <input name="sawCutProdLmPerDay" type="number" inputmode="decimal" min="0" step="0.1" value="45">
+                  </label>
+                  <label>Saw cut crew
+                    <input name="sawCutCrew" type="number" inputmode="numeric" min="1" step="1" value="1">
+                  </label>
+                </div>
+              </section>
+
+              <section class="sub-panel">
+                <h4>Minimum Tools and Equipment</h4>
+                <div class="form-row">
+                  <label>Tie wire kg
+                    <input name="tieWireKg" type="number" inputmode="decimal" min="0" step="0.1" placeholder="Auto 1.5% of reo">
+                  </label>
+                  <label>Tie wire $/kg
+                    <input name="tieWireRate" type="number" inputmode="decimal" min="0" step="0.01" value="4.50">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label>Small tools allowance $
+                    <input name="smallToolsAllowance" type="number" inputmode="decimal" min="0" step="0.01" value="25">
+                  </label>
+                  <label>Equipment damage/wear $
+                    <input name="equipmentDamageAllowance" type="number" inputmode="decimal" min="0" step="0.01" value="35">
                   </label>
                 </div>
               </section>
@@ -232,10 +325,12 @@
             <div class="totals">
               <span id="totalArea">0.000 m²</span>
               <span id="totalVolume">0.000 m³</span>
-              <span id="totalFormwork">0.000 m² FW</span>
-              <span id="totalReo">0.000 kg reo</span>
-              <span id="totalSteelCost">$0.00 steel</span>
-            </div>
+            <span id="totalFormwork">0.000 m² FW</span>
+            <span id="totalReo">0.000 kg reo</span>
+            <span id="totalDowels">0 dowels</span>
+            <span id="totalSawCut">0.000 lm saw cut</span>
+            <span id="totalSteelCost">$0.00 steel</span>
+          </div>
           </div>
           <div class="table-wrap">
             <table>
@@ -249,6 +344,9 @@
                   <th>Volume</th>
                   <th>Formwork</th>
                   <th>Reinforcement</th>
+                  <th>Dowels / Epoxy</th>
+                  <th>Saw Cut</th>
+                  <th>Tools / Damage</th>
                   <th>Min Manpower</th>
                   <th>Status</th>
                   <th></th>
@@ -289,6 +387,9 @@
             <article><span>Concrete</span><strong id="quoteConcrete">$0.00</strong></article>
             <article><span>Formwork</span><strong id="quoteFormwork">$0.00</strong></article>
             <article><span>Reinforcement</span><strong id="quoteSteel">$0.00</strong></article>
+            <article><span>Dowels / Epoxy</span><strong id="quoteDowels">$0.00</strong></article>
+            <article><span>Saw Cut</span><strong id="quoteSawCut">$0.00</strong></article>
+            <article><span>Tools / Damage</span><strong id="quoteTools">$0.00</strong></article>
             <article><span>Subtotal</span><strong id="quoteSubtotal">$0.00</strong></article>
             <article><span>Safe Margin</span><strong id="quoteMargin">$0.00</strong></article>
             <article><span>Suggested Total</span><strong id="quoteTotal">$0.00</strong></article>
@@ -298,6 +399,9 @@
             <label>Scope of work inclusions
               <textarea id="quoteInclusions">Concrete supply and placement as measured from marked drawings.
 Reinforcement allowance based on schedule tags where detected, otherwise minimum assumptions.
+Dowel and epoxy allowance where selected, including brand, spacing, length, and embedment.
+Saw cut allowance where selected for infill slab works.
+Minimum tools, tie wire, and equipment wear allowances as entered.
 Formwork allowance for marked concrete elements.
 Labour allowance based on minimum manpower productivity assumptions.</textarea>
             </label>

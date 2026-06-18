@@ -8,9 +8,12 @@ const state = {
   pageCount: 0,
   viewportScale: 1.4,
   activeTool: "rect",
+  scaleMode: "dimension",
   settingScale: false,
   scaleMPerPx: 0,
+  scaleLabel: "",
   scalePoints: [],
+  detectedScales: [],
   drawing: false,
   start: null,
   preview: null,
@@ -37,7 +40,12 @@ function bindEvents() {
   document.querySelectorAll(".tool").forEach((button) => {
     button.addEventListener("click", () => setTool(button.dataset.tool));
   });
+  document.querySelectorAll(".scale-mode").forEach((button) => {
+    button.addEventListener("click", () => setScaleMode(button.dataset.scaleMode));
+  });
   document.getElementById("scaleTool").addEventListener("click", startScaleTool);
+  document.getElementById("applyRatioScale").addEventListener("click", applyRatioScale);
+  document.getElementById("applyDetectedScale").addEventListener("click", applySelectedDetectedScale);
   document.getElementById("finishPolyBtn").addEventListener("click", finishPolygon);
   document.getElementById("undoBtn").addEventListener("click", undoPoint);
   document.getElementById("prevPage").addEventListener("click", () => goPage(-1));
@@ -92,10 +100,12 @@ async function renderPage() {
 async function extractTextHints() {
   const hints = [];
   const allLines = [];
+  const scaleBarCandidates = [];
   const words = /(concrete|slab|footing|pad|wall|beam|column|thick|reinforced|rc|blinding)/i;
   for (let pageNumber = 1; pageNumber <= state.pageCount; pageNumber++) {
     const page = await state.pdf.getPage(pageNumber);
     const text = await page.getTextContent();
+    scaleBarCandidates.push(...detectScaleBarCandidates(text.items, pageNumber));
     const strings = text.items.map((item) => item.str).join(" ");
     strings.split(/(?<=[.;])\s+/).forEach((line) => {
       allLines.push({ page: pageNumber, text: line });
@@ -104,6 +114,10 @@ async function extractTextHints() {
   }
   state.textLines = allLines;
   state.scheduleRules = parseReinforcementSchedules(allLines);
+  state.detectedScales = [...detectScaleCandidates(allLines), ...scaleBarCandidates]
+    .sort((a, b) => b.score - a.score || a.page - b.page || (a.ratio || 0) - (b.ratio || 0));
+  renderDetectedScales();
+  applyPreferredDetectedScale();
   const wrapper = document.getElementById("textHints");
   wrapper.innerHTML = hints.length
     ? hints.slice(0, 30).map((hint) => `<div class="hint"><b>Page ${hint.page}:</b> ${escapeHtml(hint.text)}</div>`).join("")
@@ -118,10 +132,22 @@ function setTool(tool) {
   drawMarkup();
 }
 
+function setScaleMode(mode) {
+  state.scaleMode = mode;
+  state.settingScale = false;
+  state.scalePoints = [];
+  document.querySelectorAll(".scale-mode").forEach((button) => button.classList.toggle("active", button.dataset.scaleMode === mode));
+  document.getElementById("dimensionScaleFields").classList.toggle("hidden", mode !== "dimension");
+  document.getElementById("ratioScaleFields").classList.toggle("hidden", mode !== "ratio");
+  document.getElementById("scaleStatus").textContent = state.scaleLabel || "No scale set.";
+  drawMarkup();
+}
+
 function startScaleTool() {
+  state.scaleMode = "dimension";
   state.settingScale = true;
   state.scalePoints = [];
-  document.getElementById("scaleStatus").textContent = "Click two points on a known distance.";
+  document.getElementById("scaleStatus").textContent = "Click the two ends of a known grid dimension.";
 }
 
 function pointerDown(event) {
@@ -179,7 +205,7 @@ function touchAsMouse(event) {
 function finishScale() {
   const known = numberValue(document.getElementById("knownDistance").value);
   if (!known) {
-    alert("Enter the known distance first.");
+    alert("Enter the grid dimension first.");
     state.scalePoints = [];
     return;
   }
@@ -187,8 +213,50 @@ function finishScale() {
   const knownM = unit === "mm" ? known / 1000 : known;
   const px = distance(state.scalePoints[0], state.scalePoints[1]);
   state.scaleMPerPx = knownM / px;
+  state.scaleLabel = `Scale set from ${fmtKnown(knownM)} m grid arrow: 1 px = ${state.scaleMPerPx.toFixed(5)} m`;
   state.settingScale = false;
-  document.getElementById("scaleStatus").textContent = `Scale set: 1 px = ${state.scaleMPerPx.toFixed(5)} m`;
+  document.getElementById("scaleStatus").textContent = state.scaleLabel;
+}
+
+function applyRatioScale() {
+  const ratio = parsePlanScale(document.getElementById("scaleRatio").value);
+  if (!ratio) {
+    alert("Enter a plan scale like 1:100 or 1/100.");
+    return;
+  }
+  setScaleFromRatio(ratio, `printed ratio 1:${ratio}`);
+  showMissingParameters();
+  drawMarkup();
+}
+
+function applySelectedDetectedScale() {
+  const select = document.getElementById("detectedScaleSelect");
+  const candidate = state.detectedScales[Number(select.value)];
+  if (!candidate) return;
+  applyScaleCandidate(candidate);
+  showMissingParameters();
+  drawMarkup();
+}
+
+function applyScaleCandidate(candidate) {
+  if (candidate.mPerPx) {
+    setScaleFromMetresPerPixel(candidate.mPerPx, candidate.label);
+    return;
+  }
+  setScaleFromRatio(candidate.ratio, candidate.label);
+}
+
+function setScaleFromRatio(ratio, sourceLabel) {
+  const pageMmPerCanvasPx = 25.4 / 72 / state.viewportScale;
+  setScaleFromMetresPerPixel((pageMmPerCanvasPx * ratio) / 1000, sourceLabel);
+}
+
+function setScaleFromMetresPerPixel(mPerPx, sourceLabel) {
+  state.scaleMPerPx = mPerPx;
+  state.scalePoints = [];
+  state.settingScale = false;
+  state.scaleLabel = `Scale set from ${sourceLabel}: 1 px = ${state.scaleMPerPx.toFixed(5)} m`;
+  document.getElementById("scaleStatus").textContent = state.scaleLabel;
 }
 
 function finishPolygon() {
@@ -387,6 +455,138 @@ function parseReinforcementSchedules(lines) {
   return rules;
 }
 
+function detectScaleCandidates(lines) {
+  const candidates = [];
+  const seen = new Set();
+  lines.forEach(({ page, text }) => {
+    const clean = text.replace(/\s+/g, " ").trim();
+    const ratioMatches = [...clean.matchAll(/\b1\s*[:/]\s*(\d+(?:\.\d+)?)\b/gi)];
+    ratioMatches.forEach((match) => {
+      const ratio = Number.parseFloat(match[1]);
+      if (!ratio) return;
+      const localText = clean.slice(Math.max(0, match.index - 35), match.index + match[0].length + 25);
+      const kind = scaleContextForRatio(clean, match.index, match[0].length);
+      const key = `${page}-${ratio}-${kind}-${clean.slice(0, 80)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push({
+        page,
+        ratio,
+        kind,
+        text: clean.slice(0, 180),
+        label: `${kind} scale 1:${ratio} on page ${page}`,
+        score: scaleScore(localText, kind)
+      });
+    });
+
+  });
+  return candidates
+    .filter((candidate) => candidate.ratio)
+    .sort((a, b) => b.score - a.score || a.page - b.page || a.ratio - b.ratio);
+}
+
+function detectScaleBarCandidates(items, page) {
+  const labels = items
+    .map((item) => {
+      const text = String(item.str || "").trim().toLowerCase();
+      const match = text.match(/^(\d+(?:\.\d+)?)\s*(m|metres?|meters?|mm|millimetres?|millimeters?)?$/);
+      if (!match) return null;
+      return {
+        value: Number.parseFloat(match[1]),
+        unit: match[2] || "",
+        x: item.transform?.[4] || 0,
+        y: item.transform?.[5] || 0
+      };
+    })
+    .filter(Boolean);
+
+  const candidates = [];
+  labels.forEach((start) => {
+    if (start.value !== 0) return;
+    labels.forEach((end) => {
+      if (end.value <= 0 || Math.abs(start.y - end.y) > 5) return;
+      const dxPdfPoints = Math.abs(end.x - start.x);
+      if (dxPdfPoints < 20) return;
+      const unit = end.unit || start.unit;
+      if (!unit) return;
+      const knownM = /mm|millimet/.test(unit) ? end.value / 1000 : end.value;
+      const dxCanvasPx = dxPdfPoints * state.viewportScale;
+      candidates.push({
+        page,
+        kind: "line scale",
+        mPerPx: knownM / dxCanvasPx,
+        text: `0 to ${end.value}${unit}`,
+        label: `detected line scale 0-${end.value}${unit} on page ${page}`,
+        score: 85
+      });
+    });
+  });
+
+  return candidates.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+function scaleContext(text) {
+  if (/\b(plan|floor|site|ground|layout|general arrangement|ga)\b/i.test(text)) return "plan";
+  if (/\b(section|sections|elevation|elevations|detail|details|sec\.?)\b/i.test(text)) return "section";
+  return "drawing";
+}
+
+function scaleContextForRatio(text, ratioIndex, ratioLength) {
+  const before = text.slice(Math.max(0, ratioIndex - 45), ratioIndex);
+  const after = text.slice(ratioIndex + ratioLength, ratioIndex + ratioLength + 24);
+  const planBefore = lastKeywordIndex(before, /\b(plan|floor|site|ground|layout|general arrangement|ga)\b/gi);
+  const sectionBefore = lastKeywordIndex(before, /\b(section|sections|elevation|elevations|detail|details|sec\.?)\b/gi);
+
+  if (planBefore >= 0 || sectionBefore >= 0) {
+    return planBefore > sectionBefore ? "plan" : "section";
+  }
+  return scaleContext(after);
+}
+
+function lastKeywordIndex(text, pattern) {
+  let last = -1;
+  for (const match of text.matchAll(pattern)) last = match.index;
+  return last;
+}
+
+function scaleScore(text, kind) {
+  let score = kind === "plan" ? 100 : kind === "drawing" ? 60 : 20;
+  if (/\bscale\b/i.test(text)) score += 12;
+  if (/\bnot\s+to\s+scale|nts\b/i.test(text)) score -= 100;
+  if (/\bsection|elevation|detail\b/i.test(text) && /\bplan\b/i.test(text)) score += 35;
+  if (/\bsection|elevation|detail\b/i.test(text) && !/\bplan\b/i.test(text)) score -= 15;
+  return score;
+}
+
+function renderDetectedScales() {
+  const box = document.getElementById("detectedScaleBox");
+  const select = document.getElementById("detectedScaleSelect");
+  if (!state.detectedScales.length) {
+    box.classList.add("hidden");
+    select.innerHTML = "";
+    return;
+  }
+  box.classList.remove("hidden");
+  select.innerHTML = state.detectedScales.map((candidate, index) => {
+    const note = candidate.kind === "section" ? "section/detail, use separately" : candidate.kind;
+    const scaleText = candidate.ratio ? `1:${candidate.ratio}` : candidate.text;
+    return `<option value="${index}">Page ${candidate.page}: ${scaleText} (${note})</option>`;
+  }).join("");
+}
+
+function applyPreferredDetectedScale() {
+  const preferred = state.detectedScales.find((candidate) => candidate.kind === "plan")
+    || state.detectedScales.find((candidate) => candidate.kind === "line scale")
+    || state.detectedScales.find((candidate) => candidate.kind === "drawing");
+  if (!preferred) {
+    if (state.detectedScales.some((candidate) => candidate.kind === "section")) {
+      document.getElementById("scaleStatus").textContent = "Section/detail scale detected only. Select it if you are measuring that section.";
+    }
+    return;
+  }
+  applyScaleCandidate(preferred);
+}
+
 function meshWeight(mesh) {
   return {
     SL62: 2.3,
@@ -504,7 +704,7 @@ function drawMarkup() {
   markCtx.clearRect(0, 0, markupCanvas.width, markupCanvas.height);
   state.shapes.filter((shape) => shape.page === state.page).forEach((shape) => drawShape(shape, shape.saved ? "#146c64" : "#c57a1d"));
   if (state.polyPoints.length) drawPolyline(state.polyPoints, "#245b9d", false);
-  if (state.scalePoints.length) drawPolyline(state.scalePoints, "#b8443f", false);
+  if (state.scalePoints.length) drawScaleArrow(state.scalePoints, "#b8443f");
   if (state.drawing && state.start && state.preview) {
     drawShape({ kind: state.activeTool === "line" ? "line" : "rect", points: [state.start, state.preview] }, "#245b9d");
   }
@@ -550,6 +750,25 @@ function drawPolyline(points, color, closed) {
     markCtx.fillStyle = color;
     markCtx.fill();
   });
+}
+
+function drawScaleArrow(points, color) {
+  drawPolyline(points, color, false);
+  if (points.length < 2) return;
+  drawArrowHead(points[1], points[0], color);
+  drawArrowHead(points[0], points[1], color);
+}
+
+function drawArrowHead(tip, tail, color) {
+  const angle = Math.atan2(tip.y - tail.y, tip.x - tail.x);
+  const size = 12;
+  markCtx.beginPath();
+  markCtx.moveTo(tip.x, tip.y);
+  markCtx.lineTo(tip.x - size * Math.cos(angle - Math.PI / 6), tip.y - size * Math.sin(angle - Math.PI / 6));
+  markCtx.lineTo(tip.x - size * Math.cos(angle + Math.PI / 6), tip.y - size * Math.sin(angle + Math.PI / 6));
+  markCtx.closePath();
+  markCtx.fillStyle = color;
+  markCtx.fill();
 }
 
 function formValues() {
@@ -668,6 +887,17 @@ function measuredText(measured) {
 
 function numberValue(value) {
   return Number.parseFloat(value) || 0;
+}
+
+function parsePlanScale(value) {
+  const clean = String(value || "").trim().replace(/\s+/g, "");
+  const match = clean.match(/^1(?::|\/)(\d+(?:\.\d+)?)$/);
+  if (!match) return 0;
+  return Number.parseFloat(match[1]) || 0;
+}
+
+function fmtKnown(value) {
+  return Number(value || 0).toFixed(3).replace(/\.?0+$/, "");
 }
 
 function fmt(value) {

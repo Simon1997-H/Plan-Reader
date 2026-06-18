@@ -28,16 +28,37 @@
 
         <section class="tool-group">
           <h2>Scale</h2>
-          <label>Known distance on plan
-            <input id="knownDistance" type="number" inputmode="decimal" min="0" step="0.001" placeholder="Example: 10">
-          </label>
-          <label>Unit
-            <select id="scaleUnit">
-              <option value="m">metres</option>
-              <option value="mm">millimetres</option>
-            </select>
-          </label>
-          <button id="scaleTool" class="ghost-button" type="button">Set Scale From Line</button>
+          <div class="scale-choice" role="group" aria-label="Scale method">
+            <button id="scaleDimensionMode" class="scale-mode active" type="button" data-scale-mode="dimension">Grid dimension</button>
+            <button id="scaleRatioMode" class="scale-mode" type="button" data-scale-mode="ratio">Plan ratio</button>
+          </div>
+
+          <div id="dimensionScaleFields" class="scale-fields">
+            <label>Distance between grid lines
+              <input id="knownDistance" type="number" inputmode="decimal" min="0" step="0.001" placeholder="Example: 10">
+            </label>
+            <label>Unit
+              <select id="scaleUnit">
+                <option value="m">metres</option>
+                <option value="mm">millimetres</option>
+              </select>
+            </label>
+            <button id="scaleTool" class="ghost-button" type="button">Draw Scale Arrow</button>
+          </div>
+
+          <div id="ratioScaleFields" class="scale-fields hidden">
+            <label>Printed plan scale
+              <input id="scaleRatio" inputmode="text" placeholder="Example: 1:100 or 1/100">
+            </label>
+            <button id="applyRatioScale" class="ghost-button" type="button">Apply Plan Ratio</button>
+          </div>
+
+          <div id="detectedScaleBox" class="scale-fields hidden">
+            <label>Detected from plan text
+              <select id="detectedScaleSelect"></select>
+            </label>
+            <button id="applyDetectedScale" class="ghost-button" type="button">Use Selected Scale</button>
+          </div>
           <p id="scaleStatus" class="helper">No scale set.</p>
         </section>
 

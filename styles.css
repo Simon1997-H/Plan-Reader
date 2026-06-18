@@ -102,6 +102,37 @@ h1, h2, h3, p { margin: 0; }
   grid-template-columns: 1fr;
 }
 
+.scale-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 8px;
+  background: rgba(255,255,255,.08);
+}
+
+.scale-mode {
+  min-height: 40px;
+  padding: 8px;
+  color: #e8f0ee;
+  background: transparent;
+  border-color: transparent;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.scale-mode.active {
+  color: var(--accent-strong);
+  background: #fff;
+  border-color: #fff;
+}
+
+.scale-fields {
+  display: grid;
+  gap: 10px;
+}
+
 .reader-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;

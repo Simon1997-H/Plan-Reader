@@ -6,7 +6,7 @@ Open `index.html` in a browser.
 
 - Upload a PDF plan.
 - Render PDF pages in the browser.
-- Set scale by drawing a known-distance line.
+- Set scale by either drawing a grid/dimension arrow between two known points or entering a printed ratio such as `1:100` or `1/100`.
 - Mark concrete works using rectangle, polygon, or wall-line tools.
 - Classify each markup as slab, isolated footing, pad footing, wall, column/round, or beam.
 - Calculate measured area, length, concrete volume, formwork area, waste allowance, and totals.
@@ -30,6 +30,15 @@ The app is set up with editable defaults:
 ## Market pricing
 
 The app includes editable Australian market allowance fields for steel, concrete, formwork, and margin. A static GitHub Pages app cannot automatically scrape live supplier prices or commodity feeds. To keep steel price truly live, connect the app to a backend or pricing API. Until then, update the steel `$ / kg` field from your latest supplier quote or preferred Australian market source before issuing a quotation.
+
+## Scale
+
+Scale can be set in two ways:
+
+- `Grid dimension`: enter the real distance between two grid lines or known dimension points, choose metres or millimetres, then draw the scale arrow on the plan.
+- `Plan ratio`: enter the printed plan scale as either `1:100` or `1/100`. Both formats are read the same way.
+
+When a PDF has selectable text, the app also scans for printed scales automatically. Plan/floor/site scales are preferred over section/elevation/detail scales when both are shown. Section/detail scales remain available in the detected scale selector so they can be used separately when measuring sections. If a line scale has selectable numeric labels, the app attempts to set scale from that bar as well.
 
 ## Quotation
 

@@ -67,11 +67,10 @@ function bindEvents() {
     });
   });
   markupCanvas.addEventListener("mousedown", pointerDown);
-  markupCanvas.addEventListener("mousemove", pointerMove);
-  markupCanvas.addEventListener("mouseup", pointerUp);
-  markupCanvas.addEventListener("mouseleave", pointerUp);
   markupCanvas.addEventListener("wheel", zoomWithWheel, { passive: false });
   markupCanvas.addEventListener("auxclick", stopMiddleClickDefault);
+  window.addEventListener("mousemove", pointerMove);
+  window.addEventListener("mouseup", pointerUp);
   markupCanvas.addEventListener("touchstart", touchAsMouse, { passive: false });
   markupCanvas.addEventListener("touchmove", touchAsMouse, { passive: false });
   markupCanvas.addEventListener("touchend", touchAsMouse, { passive: false });
@@ -206,7 +205,7 @@ function pointerUp(event) {
     state.panning = false;
     state.temporaryPan = false;
     state.panStart = null;
-    markupCanvas.classList.remove("panning");
+    setPanVisual(false);
     return;
   }
   if (!state.drawing || !state.start) return;
@@ -231,7 +230,14 @@ function startPanning(event, temporary) {
     scrollLeft: document.getElementById("canvasWrap").scrollLeft,
     scrollTop: document.getElementById("canvasWrap").scrollTop
   };
-  markupCanvas.classList.add("panning");
+  setPanVisual(true);
+}
+
+function setPanVisual(active) {
+  markupCanvas.classList.toggle("panning", active);
+  document.getElementById("canvasWrap").classList.toggle("panning", active);
+  document.body.classList.toggle("pan-active", active);
+  document.getElementById("panIndicator").classList.toggle("hidden", !active);
 }
 
 function setViewZoom(nextZoom, anchor) {

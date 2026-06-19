@@ -17,6 +17,7 @@ const state = {
   detectedScales: [],
   drawing: false,
   panning: false,
+  temporaryPan: false,
   panStart: null,
   start: null,
   preview: null,
@@ -70,6 +71,7 @@ function bindEvents() {
   markupCanvas.addEventListener("mouseup", pointerUp);
   markupCanvas.addEventListener("mouseleave", pointerUp);
   markupCanvas.addEventListener("wheel", zoomWithWheel, { passive: false });
+  markupCanvas.addEventListener("auxclick", stopMiddleClickDefault);
   markupCanvas.addEventListener("touchstart", touchAsMouse, { passive: false });
   markupCanvas.addEventListener("touchmove", touchAsMouse, { passive: false });
   markupCanvas.addEventListener("touchend", touchAsMouse, { passive: false });
@@ -162,15 +164,9 @@ function startScaleTool() {
 }
 
 function pointerDown(event) {
-  if (state.activeTool === "pan") {
-    state.panning = true;
-    state.panStart = {
-      x: event.clientX,
-      y: event.clientY,
-      scrollLeft: document.getElementById("canvasWrap").scrollLeft,
-      scrollTop: document.getElementById("canvasWrap").scrollTop
-    };
-    markupCanvas.classList.add("panning");
+  if (event.button === 1 || state.activeTool === "pan") {
+    event.preventDefault();
+    startPanning(event, event.button === 1);
     return;
   }
 
@@ -208,6 +204,7 @@ function pointerMove(event) {
 function pointerUp(event) {
   if (state.panning) {
     state.panning = false;
+    state.temporaryPan = false;
     state.panStart = null;
     markupCanvas.classList.remove("panning");
     return;
@@ -223,6 +220,18 @@ function pointerUp(event) {
   state.start = null;
   state.preview = null;
   drawMarkup();
+}
+
+function startPanning(event, temporary) {
+  state.panning = true;
+  state.temporaryPan = temporary;
+  state.panStart = {
+    x: event.clientX,
+    y: event.clientY,
+    scrollLeft: document.getElementById("canvasWrap").scrollLeft,
+    scrollTop: document.getElementById("canvasWrap").scrollTop
+  };
+  markupCanvas.classList.add("panning");
 }
 
 function setViewZoom(nextZoom, anchor) {
@@ -257,6 +266,10 @@ function zoomWithWheel(event) {
   };
   const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
   setViewZoom(state.viewZoom * factor, anchor);
+}
+
+function stopMiddleClickDefault(event) {
+  if (event.button === 1) event.preventDefault();
 }
 
 function touchAsMouse(event) {
